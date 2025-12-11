@@ -3,16 +3,19 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import os
+import sys
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="MNIST Classifier", layout="wide")
 st.title('Classificador de Números (MNIST)')
 st.markdown('Envie uma imagem em preto e branco de um número desenhado à mão (0-9).')
+st.caption(f"Usando TensorFlow versão: {tf.__version__} | Python versão: {sys.version.split(' ')[0]}")
 
 # --- Definição da Arquitetura do Modelo ---
 # A arquitetura deve ser EXATAMENTE a mesma usada para treinar o arquivo .h5.
 def create_model():
     model = tf.keras.Sequential([
+        # Estrutura CNN idêntica ao treinamento
         tf.keras.layers.Conv2D(filters=32, kernel_size=5, padding='same', activation='relu', input_shape=(28, 28, 1)),
         tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2), padding='valid'),
         tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu'),
@@ -36,13 +39,17 @@ def load_model_weights():
     if not os.path.exists(model_path):
         st.error(f"Arquivo de pesos não encontrado: {model_path}")
         st.warning("Verifique se o arquivo está no mesmo diretório do 'app.py'.")
-        raise FileNotFoundError(f"Arquivo de pesos {model_path} ausente.")
+        # Levanta um erro específico que pode ser capturado
+        raise FileNotFoundError(f"Arquivo de pesos {model_path} ausente. Verifique o caminho.")
         
     # 3. Carrega os pesos
     try:
+        # Nota: load_weights é usado quando se tem apenas o .h5 dos pesos, e a arquitetura é recriada.
         model.load_weights(model_path)
     except Exception as e:
-        st.error("Erro ao carregar os pesos do arquivo .h5. Verifique a compatibilidade do Keras/TensorFlow.")
+        st.error("Erro ao carregar os pesos do arquivo .h5.")
+        st.warning("Pode ser incompatibilidade de versão Keras/TensorFlow. Tente recriar o .h5 na sua versão atual do TF.")
+        # Retorna o erro detalhado
         raise e
         
     return model
@@ -50,11 +57,12 @@ def load_model_weights():
 # Tenta carregar o modelo
 model = None
 try:
-    model = load_model_weights()
+    with st.spinner("Carregando modelo e pesos..."):
+        model = load_model_weights()
     st.success("✅ Modelo CNN carregado com sucesso!")
 except Exception as e:
-    st.error("🚨 O aplicativo não pôde inicializar devido a um erro no TensorFlow ou no carregamento do arquivo.")
-    st.exception(e)
+    st.error("🚨 O aplicativo não pôde inicializar devido a um erro no carregamento do modelo.")
+    st.exception(e) # Mostra o erro detalhado para debug
 
 # --- Interface de Upload e Classificação ---
 if model is not None:
@@ -74,19 +82,17 @@ if model is not None:
             img_array = np.array(img_resized)
             img_array = img_array.astype('float32') / 255.0
 
-            # 3. INVERSÃO DE COR (CRUCIAL para MNIST)
-            # MNIST (treinamento) usa fundo preto (valor 0) e número branco (valor 1).
-            # Se a imagem enviada tiver fundo branco (média alta), invertemos.
+            # 3. INVERSÃO DE COR (Crucial para MNIST: Fundo preto, número branco)
             if np.mean(img_array) > 0.5: 
                 img_array = 1.0 - img_array
-                st.caption("Cores da imagem invertidas (fundo preto/número branco) para o modelo.")
+                st.caption("Cores da imagem invertidas (fundo preto/número branco).")
 
             # 4. Ajusta as dimensões para o formato do modelo (1, 28, 28, 1)
             img_array = img_array.reshape(1, 28, 28, 1) 
             
             with col2:
                 if st.button('Classificar Imagem'):
-                    with st.spinner('Classificando...'):
+                    with st.spinner('Realizando a predição...'):
                         prediction = model.predict(img_array)
                         label = np.argmax(prediction)
                         confidence = np.max(prediction) * 100
@@ -95,6 +101,7 @@ if model is not None:
                         st.info(f"Certeza da IA: **{confidence:.2f}%**")
                         
                         st.subheader("Probabilidades")
+                        # Exibe o gráfico das probabilidades para visualização
                         st.bar_chart(prediction.flatten())
                         
         except Exception as e:
