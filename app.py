@@ -1,8 +1,16 @@
+import streamlit as st
 import tensorflow as tf
-from tensorflow.keras.datasets import mnist
 import numpy as np
+from PIL import Image
+import os
 
-# 1. Função para criar o modelo (igual à do seu app)
+# --- Configuração da Página ---
+st.set_page_config(page_title="MNIST Classifier", layout="wide")
+st.title('Classificador de Números (MNIST)')
+st.markdown('Envie uma imagem em preto e branco de um número desenhado à mão (0-9).')
+
+# --- Definição da Arquitetura do Modelo ---
+# A arquitetura deve ser EXATAMENTE a mesma usada para treinar o arquivo .h5.
 def create_model():
     model = tf.keras.Sequential([
         tf.keras.layers.Conv2D(filters=32, kernel_size=5, padding='same', activation='relu', input_shape=(28, 28, 1)),
@@ -17,29 +25,77 @@ def create_model():
     ])
     return model
 
-# 2. Preparar os dados MNIST
-(x_train, y_train), (x_test, y_test) = mnist.load_data()
+# --- Carregamento e Cache do Modelo ---
+@st.cache_resource
+def load_model_weights():
+    # 1. Cria a arquitetura
+    model = create_model()
+    model_path = 'final_CNN_model.h5'
+    
+    # 2. Verifica se o arquivo existe
+    if not os.path.exists(model_path):
+        st.error(f"Arquivo de pesos não encontrado: {model_path}")
+        st.warning("Verifique se o arquivo está no mesmo diretório do 'app.py'.")
+        raise FileNotFoundError(f"Arquivo de pesos {model_path} ausente.")
+        
+    # 3. Carrega os pesos
+    try:
+        model.load_weights(model_path)
+    except Exception as e:
+        st.error("Erro ao carregar os pesos do arquivo .h5. Verifique a compatibilidade do Keras/TensorFlow.")
+        raise e
+        
+    return model
 
-# Pré-processamento e formatação
-x_train = x_train.reshape(-1, 28, 28, 1).astype('float32') / 255.0
-x_test = x_test.reshape(-1, 28, 28, 1).astype('float32') / 255.0
-y_train = tf.keras.utils.to_categorical(y_train, num_classes=10)
-y_test = tf.keras.utils.to_categorical(y_test, num_classes=10)
+# Tenta carregar o modelo
+model = None
+try:
+    model = load_model_weights()
+    st.success("✅ Modelo CNN carregado com sucesso!")
+except Exception as e:
+    st.error("🚨 O aplicativo não pôde inicializar devido a um erro no TensorFlow ou no carregamento do arquivo.")
+    st.exception(e)
 
-# 3. Criar, compilar e treinar o modelo
-cnn_model = create_model()
-cnn_model.compile(optimizer='adam',
-                  loss='categorical_crossentropy',
-                  metrics=['accuracy'])
+# --- Interface de Upload e Classificação ---
+if model is not None:
+    file = st.file_uploader("Escolha uma imagem...", type=["jpg", "png", "jpeg"])
 
-print("Iniciando treinamento do modelo...")
-cnn_model.fit(x_train, y_train,
-              batch_size=128,
-              epochs=5, # Geralmente 5-15 épocas são suficientes para MNIST
-              validation_data=(x_test, y_test))
+    if file is not None:
+        try:
+            # 1. Abre a imagem e converte para escala de cinza (L)
+            image = Image.open(file).convert('L') 
+            
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.image(image, caption='Imagem enviada', width=150)
 
-# 4. Salvar os pesos do modelo (Este é o arquivo que seu app precisa!)
-file_path = 'final_CNN_model.h5'
-cnn_model.save_weights(file_path)
+            # 2. Pré-processamento: Redimensiona e Normaliza
+            img_resized = image.resize((28, 28)) 
+            img_array = np.array(img_resized)
+            img_array = img_array.astype('float32') / 255.0
 
-print(f"\nTreinamento concluído. Pesos salvos em: {file_path}")
+            # 3. INVERSÃO DE COR (CRUCIAL para MNIST)
+            # MNIST (treinamento) usa fundo preto (valor 0) e número branco (valor 1).
+            # Se a imagem enviada tiver fundo branco (média alta), invertemos.
+            if np.mean(img_array) > 0.5: 
+                img_array = 1.0 - img_array
+                st.caption("Cores da imagem invertidas (fundo preto/número branco) para o modelo.")
+
+            # 4. Ajusta as dimensões para o formato do modelo (1, 28, 28, 1)
+            img_array = img_array.reshape(1, 28, 28, 1) 
+            
+            with col2:
+                if st.button('Classificar Imagem'):
+                    with st.spinner('Classificando...'):
+                        prediction = model.predict(img_array)
+                        label = np.argmax(prediction)
+                        confidence = np.max(prediction) * 100
+                        
+                        st.markdown(f"### 🤖 Resultado: **{label}**")
+                        st.info(f"Certeza da IA: **{confidence:.2f}%**")
+                        
+                        st.subheader("Probabilidades")
+                        st.bar_chart(prediction.flatten())
+                        
+        except Exception as e:
+            st.error(f"Erro no processamento da imagem ou predição: {e}")
