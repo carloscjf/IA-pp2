@@ -1,17 +1,14 @@
-import streamlit as st
 import tensorflow as tf
+from tensorflow.keras.datasets import mnist
 import numpy as np
-from PIL import Image
 
-st.title('Classificador de Números (MNIST)')
-st.write('Envie uma imagem de um número desenhado à mão (0-9).')
-
+# 1. Função para criar o modelo (igual à do seu app)
 def create_model():
     model = tf.keras.Sequential([
-        tf.keras.layers.Conv2D(filters=32, kernel_size=5, padding='same', activation='relu', input_shape=(28,28,1)),
-        tf.keras.layers.MaxPool2D(pool_size=(2,2), strides=(2,2), padding='valid'),
+        tf.keras.layers.Conv2D(filters=32, kernel_size=5, padding='same', activation='relu', input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2), padding='valid'),
         tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu'),
-        tf.keras.layers.MaxPool2D(pool_size=(2,2), strides=(2,2), padding='valid'),
+        tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2), padding='valid'),
         tf.keras.layers.Dropout(0.25),
         tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(units=128, activation='relu'),
@@ -20,32 +17,29 @@ def create_model():
     ])
     return model
 
-@st.cache_resource
-def load_model_weights():
-    model = create_model()
-    model.load_weights('final_CNN_model.h5')
-    return model
+# 2. Preparar os dados MNIST
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-try:
-    model = load_model_weights()
-    st.success("Modelo carregado com sucesso!")
-except Exception as e:
-    st.error(f"Erro ao carregar modelo: {e}")
+# Pré-processamento e formatação
+x_train = x_train.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+x_test = x_test.reshape(-1, 28, 28, 1).astype('float32') / 255.0
+y_train = tf.keras.utils.to_categorical(y_train, num_classes=10)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes=10)
 
-file = st.file_uploader("Escolha uma imagem...", type=["jpg", "png", "jpeg"])
+# 3. Criar, compilar e treinar o modelo
+cnn_model = create_model()
+cnn_model.compile(optimizer='adam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
 
-if file is not None:
-    image = Image.open(file).convert('L')
-    st.image(image, caption='Imagem enviada', width=150)
+print("Iniciando treinamento do modelo...")
+cnn_model.fit(x_train, y_train,
+              batch_size=128,
+              epochs=5, # Geralmente 5-15 épocas são suficientes para MNIST
+              validation_data=(x_test, y_test))
 
-    img_array = np.array(image.resize((28, 28)))
-    img_array = img_array.astype('float32') / 255.0
-    img_array = img_array.reshape(1, 28, 28, 1)
+# 4. Salvar os pesos do modelo (Este é o arquivo que seu app precisa!)
+file_path = 'final_CNN_model.h5'
+cnn_model.save_weights(file_path)
 
-    if st.button('Classificar'):
-        prediction = model.predict(img_array)
-        label = np.argmax(prediction)
-        confidence = np.max(prediction) * 100
-        
-        st.markdown(f"### Resultado: **{label}**")
-        st.info(f"Certeza da IA: {confidence:.2f}%")
+print(f"\nTreinamento concluído. Pesos salvos em: {file_path}")
