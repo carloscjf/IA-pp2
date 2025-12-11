@@ -1,30 +1,51 @@
 import streamlit as st
-import os
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, optimizers, datasets
-from matplotlib import pyplot as plt
 import numpy as np
 from PIL import Image
-import io
-from sklearn.metrics import (accuracy_score, precision_score, recall_score,
-                             f1_score, cohen_kappa_score, classification_report,
-                             roc_curve, auc)
-from sklearn.preprocessing import label_binarize
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-# Configuração da página
-st.set_page_config(page_title="MNIST Model App", layout="wide")
-# Carregar o dataset MNIST
-@st.cache_data
-def load_data():
-    (x_train_raw, y_train_raw), (x_test_raw, y_test_raw) = datasets.mnist.load_data()
-    return x_train_raw, y_train_raw, x_test_raw, y_test_raw
-x_train_raw, y_train_raw, x_test_raw, y_test_raw = load_data()
-# Pré-processamento
-num_classes = 10
-y_train = keras.utils.to_categorical(y_train_raw, num_classes)
-y_test = keras.utils.to_categorical(y_test_raw, num_classes)
-x_train = x_train_raw.reshape(60000, 784).astype('float32') / 255
-x_test = x_test_raw.reshape(10000, 784).astype('float32') / 255
-# Função para treinar e salvar modelos
-def train_dnn():
+
+st.title('Classificador de Números (MNIST)')
+st.write('Envie uma imagem de um número desenhado à mão (0-9).')
+
+def create_model():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(filters=32, kernel_size=5, padding='same', activation='relu', input_shape=(28,28,1)),
+        tf.keras.layers.MaxPool2D(pool_size=(2,2), strides=(2,2), padding='valid'),
+        tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu'),
+        tf.keras.layers.MaxPool2D(pool_size=(2,2), strides=(2,2), padding='valid'),
+        tf.keras.layers.Dropout(0.25),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(units=128, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(units=10, activation='softmax')
+    ])
+    return model
+
+@st.cache_resource
+def load_model_weights():
+    model = create_model()
+    model.load_weights('final_CNN_model.h5')
+    return model
+
+try:
+    model = load_model_weights()
+    st.success("Modelo carregado com sucesso!")
+except Exception as e:
+    st.error(f"Erro ao carregar modelo: {e}")
+
+file = st.file_uploader("Escolha uma imagem...", type=["jpg", "png", "jpeg"])
+
+if file is not None:
+    image = Image.open(file).convert('L')
+    st.image(image, caption='Imagem enviada', width=150)
+
+    img_array = np.array(image.resize((28, 28)))
+    img_array = img_array.astype('float32') / 255.0
+    img_array = img_array.reshape(1, 28, 28, 1)
+
+    if st.button('Classificar'):
+        prediction = model.predict(img_array)
+        label = np.argmax(prediction)
+        confidence = np.max(prediction) * 100
+        
+        st.markdown(f"### Resultado: **{label}**")
+        st.info(f"Certeza da IA: {confidence:.2f}%")
